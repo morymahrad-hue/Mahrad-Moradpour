@@ -894,13 +894,41 @@ echo "========================================================"
 // In-memory persistent database stores
 let vpnServersDb = [
   {
+    id: 'srv-cf-edge',
+    name: 'GitHub & Cloudflare Edge Node (Auto Free)',
+    country: 'شبکه جهانی Anycast',
+    countryCode: 'eu',
+    flag: '⚡',
+    host: '104.16.132.229',
+    ip: '104.16.132.229',
+    vlessPort: 443,
+    vmessPort: 2053,
+    trojanPort: 8443,
+    ssPort: 8388,
+    status: 'online',
+    pingMs: 29,
+    cpuPercent: 14,
+    ramPercent: 32,
+    diskPercent: 20,
+    bandwidthUsedGB: 620,
+    bandwidthTotalGB: 50000,
+    maxUsers: 2000,
+    activeUsers: 840,
+    sni: 'speedtest.net',
+    publicKey: 'a9K1k9qB7u8X3x5v2Y7t0W1e8R9m6P4l2Q8j5H3n1G',
+    shortId: '8f7a1c3e',
+    wsPath: '/',
+    grpcServiceName: 'mahi-grpc',
+    isDefault: true,
+  },
+  {
     id: 'srv-de-01',
     name: 'Frankfurt Ultra-Low-Ping Node',
     country: 'آلمان',
     countryCode: 'de',
     flag: '🇩🇪',
-    host: 'fra1.mahi-joovoon.cloud',
-    ip: '185.190.142.88',
+    host: '104.16.132.229',
+    ip: '104.16.132.229',
     vlessPort: 443,
     vmessPort: 2053,
     trojanPort: 8443,
@@ -917,9 +945,8 @@ let vpnServersDb = [
     sni: 'speedtest.net',
     publicKey: 'a9K1k9qB7u8X3x5v2Y7t0W1e8R9m6P4l2Q8j5H3n1G',
     shortId: '8f7a1c3e',
-    wsPath: '/mahi-ws',
+    wsPath: '/',
     grpcServiceName: 'mahi-grpc',
-    isDefault: true,
   },
   {
     id: 'srv-fi-02',
@@ -927,8 +954,8 @@ let vpnServersDb = [
     country: 'فنلاند',
     countryCode: 'fi',
     flag: '🇫🇮',
-    host: 'hel1.mahi-joovoon.cloud',
-    ip: '95.217.180.44',
+    host: '104.19.241.93',
+    ip: '104.19.241.93',
     vlessPort: 443,
     vmessPort: 2083,
     trojanPort: 8443,
@@ -942,10 +969,10 @@ let vpnServersDb = [
     bandwidthTotalGB: 10000,
     maxUsers: 400,
     activeUsers: 218,
-    sni: 'discord.com',
+    sni: 'zula.ir',
     publicKey: 'b2C4d6E8f0A1c3E5g7I9k1M3o5Q7s9U1w3Y5a7C9e',
     shortId: '4b2d9f1a',
-    wsPath: '/fi-secure',
+    wsPath: '/',
     grpcServiceName: 'fi-stream',
   },
   {
@@ -954,8 +981,8 @@ let vpnServersDb = [
     country: 'هلند',
     countryCode: 'nl',
     flag: '🇳🇱',
-    host: 'ams1.mahi-joovoon.cloud',
-    ip: '194.36.191.12',
+    host: '172.67.182.196',
+    ip: '172.67.182.196',
     vlessPort: 443,
     vmessPort: 2096,
     trojanPort: 8443,
@@ -972,7 +999,7 @@ let vpnServersDb = [
     sni: 'cloudflare.com',
     publicKey: 'x9Z8y7X6w5V4u3T2s1R0q9P8o7N6m5L4k3J2i1H0g',
     shortId: '9e3c2b1a',
-    wsPath: '/ams-stream',
+    wsPath: '/',
     grpcServiceName: 'ams-rpc',
   },
   {
@@ -981,8 +1008,8 @@ let vpnServersDb = [
     country: 'ترکیه',
     countryCode: 'tr',
     flag: '🇹🇷',
-    host: 'ist1.mahi-joovoon.cloud',
-    ip: '185.122.202.90',
+    host: '162.159.136.234',
+    ip: '162.159.136.234',
     vlessPort: 443,
     vmessPort: 2053,
     trojanPort: 8443,
@@ -999,7 +1026,7 @@ let vpnServersDb = [
     sni: 'speedtest.net',
     publicKey: 'k1L2m3N4o5P6q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e',
     shortId: '7a8b9c0d',
-    wsPath: '/tr-game',
+    wsPath: '/',
     grpcServiceName: 'tr-grpc',
   },
   {
@@ -1008,8 +1035,8 @@ let vpnServersDb = [
     country: 'آمریکا',
     countryCode: 'us',
     flag: '🇺🇸',
-    host: 'nyc1.mahi-joovoon.cloud',
-    ip: '198.51.100.22',
+    host: '104.18.2.161',
+    ip: '104.18.2.161',
     vlessPort: 443,
     vmessPort: 2083,
     trojanPort: 8443,
@@ -1026,7 +1053,7 @@ let vpnServersDb = [
     sni: 'apple.com',
     publicKey: 'p9O8i7U6y5T4r3E2w1Q0a9S8d7F6g5H4j3K2l1Z0x',
     shortId: '1c2d3e4f',
-    wsPath: '/us-ai',
+    wsPath: '/',
     grpcServiceName: 'us-grpc',
   },
 ];
@@ -1426,6 +1453,19 @@ app.get('/api/vpn/sub/:token', (req, res) => {
   res.setHeader('Subscription-Userinfo', `upload=1073741824; download=${Math.floor(user.dataUsedGB * 1073741824)}; total=${Math.floor(user.dataLimitGB * 1073741824)}; expire=1893456000`);
   res.setHeader('Profile-Update-Interval', '6');
   res.send(base64Sub);
+});
+
+// Universal Direct Subscription Feed
+app.get(['/sub.txt', '/sub'], (req, res) => {
+  try {
+    const rawNodes = fs.readFileSync('public/nodes.txt', 'utf-8');
+    const b64 = Buffer.from(rawNodes, 'utf-8').toString('base64');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Profile-Update-Interval', '6');
+    res.send(b64);
+  } catch (err: any) {
+    res.status(500).send('Error reading subscription feed');
+  }
 });
 
 // 6. TRANSACTIONS & PAYMENTS
