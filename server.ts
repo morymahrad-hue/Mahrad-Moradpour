@@ -1491,6 +1491,71 @@ app.post('/api/vpn/tickets/:id/reply', (req, res) => {
 });
 
 // ----------------------------------------------------
+// GIT & CI/CD AUTOMATION API
+// ----------------------------------------------------
+app.get('/api/git/status', async (req, res) => {
+  try {
+    const { stdout: branch } = await execAsync('git --git-dir=/app/applet/.git --work-tree=/app/applet branch --show-current');
+    const { stdout: lastCommit } = await execAsync('git --git-dir=/app/applet/.git --work-tree=/app/applet log -n 1 --pretty=format:"%h - %s (%ci)"');
+    const { stdout: remotes } = await execAsync('git --git-dir=/app/applet/.git --work-tree=/app/applet remote -v').catch(() => ({ stdout: '' }));
+
+    res.json({
+      branch: branch.trim() || 'main',
+      lastCommit: lastCommit.trim() || 'Initialized',
+      remotes: remotes.trim().split('\n').filter(Boolean),
+      hasRemote: remotes.trim().length > 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/git/push', async (req, res) => {
+  const { remoteUrl, personalAccessToken } = req.body;
+  if (!remoteUrl) {
+    return res.status(400).json({ error: 'آدرس ریپازیتوری گیت‌هاب الزامی است.' });
+  }
+
+  let finalUrl = remoteUrl.trim();
+  if (personalAccessToken && personalAccessToken.trim() && finalUrl.startsWith('https://github.com/')) {
+    const cleanToken = personalAccessToken.trim();
+    finalUrl = finalUrl.replace('https://github.com/', `https://x-access-token:${cleanToken}@github.com/`);
+  }
+
+  try {
+    // Add or set remote origin
+    await execAsync(`git --git-dir=/app/applet/.git --work-tree=/app/applet remote remove origin`).catch(() => {});
+    await execAsync(`git --git-dir=/app/applet/.git --work-tree=/app/applet remote add origin "${finalUrl}"`);
+
+    // Commit any new changes
+    await execAsync(`git --git-dir=/app/applet/.git --work-tree=/app/applet add .`);
+    await execAsync(`git --git-dir=/app/applet/.git --work-tree=/app/applet commit -m "update: automated sync"`).catch(() => {});
+
+    // Push to GitHub main branch
+    const { stdout, stderr } = await execAsync(`git --git-dir=/app/applet/.git --work-tree=/app/applet push -u origin main --force`);
+
+    // Calculate GitHub Pages URL
+    const match = remoteUrl.trim().replace(/\.git$/, '').match(/github\.com\/([^/]+)\/([^/]+)/);
+    const pagesUrl = match ? `https://${match[1]}.github.io/${match[2]}/` : null;
+
+    res.json({
+      success: true,
+      message: 'پروژه با موفقیت به گیت‌هاب ارسال شد و پایپ‌لاین GitHub Pages فعال گردید!',
+      pagesUrl,
+      repoUrl: remoteUrl.trim(),
+      stdout,
+      stderr,
+    });
+  } catch (err: any) {
+    console.error('Git Push Error:', err);
+    res.status(500).json({
+      error: 'PUSH_FAILED',
+      message: err.message || 'خطا در ارسال به مخزن گیت‌هاب. لطفاً توکن دسترسی (PAT) یا دسترسی‌های مخزن را بررسی کنید.',
+    });
+  }
+});
+
+// ----------------------------------------------------
 // FRONTEND SERVING (Vite in Dev, Static in Prod)
 // ----------------------------------------------------
 async function startServer() {

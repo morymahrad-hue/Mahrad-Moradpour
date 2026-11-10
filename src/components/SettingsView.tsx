@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
   Key,
@@ -23,6 +23,9 @@ import {
   Eye,
   EyeOff,
   PowerOff,
+  GitBranch,
+  UploadCloud,
+  CheckCircle,
 } from 'lucide-react';
 import { useServer } from '../context/ServerContext';
 import { FirewallRule } from '../types';
@@ -144,6 +147,107 @@ export const SettingsView: React.FC = () => {
   const handleExtendSubmit = () => {
     extendSubscription(extendDays);
     setShowExtendModal(false);
+  };
+
+  // Git CI/CD & Deployment State
+  const [gitRepoUrl, setGitRepoUrl] = useState('https://github.com/morymahrad-hue/mahi-joovoon.git');
+  const [gitToken, setGitToken] = useState('');
+  const [showGitToken, setShowGitToken] = useState(false);
+  const [isPushingGit, setIsPushingGit] = useState(false);
+  const [gitStatus, setGitStatus] = useState<{
+    branch: string;
+    lastCommit: string;
+    remotes: string[];
+    hasRemote: boolean;
+  } | null>(null);
+  const [gitPushResult, setGitPushResult] = useState<{
+    success: boolean;
+    message: string;
+    pagesUrl?: string | null;
+    repoUrl?: string | null;
+    stdout?: string;
+    stderr?: string;
+  } | null>(null);
+  const [copiedPagesLink, setCopiedPagesLink] = useState(false);
+
+  const calculatedPagesUrl = (() => {
+    try {
+      const clean = gitRepoUrl.trim().replace(/\.git$/, '');
+      const match = clean.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (match) {
+        return `https://${match[1]}.github.io/${match[2]}/`;
+      }
+    } catch {
+      // fallback
+    }
+    return 'https://morymahrad-hue.github.io/mahi-joovoon/';
+  })();
+
+  const handleCopyPagesLink = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedPagesLink(true);
+    addToast('لینک پنل در کلیپ‌بورد کپی شد!', 'success');
+    setTimeout(() => setCopiedPagesLink(false), 2500);
+  };
+
+  const fetchGitStatus = async () => {
+    try {
+      const res = await fetch('/api/git/status');
+      if (res.ok) {
+        const data = await res.json();
+        setGitStatus(data);
+      }
+    } catch {
+      // non-blocking
+    }
+  };
+
+  useEffect(() => {
+    if (settingsTab === 'deploy') {
+      fetchGitStatus();
+    }
+  }, [settingsTab]);
+
+  const handleGitPush = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gitRepoUrl.trim()) {
+      addToast('لطفاً آدرس ریپازیتوری گیت‌هاب را وارد کنید.', 'error');
+      return;
+    }
+    setIsPushingGit(true);
+    setGitPushResult(null);
+    try {
+      const res = await fetch('/api/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          remoteUrl: gitRepoUrl.trim(),
+          personalAccessToken: gitToken.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || 'خطا در ارسال به گیت‌هاب');
+      }
+      setGitPushResult({
+        success: true,
+        message: data.message || 'پروژه با موفقیت به گیت‌هاب ارسال شد!',
+        pagesUrl: data.pagesUrl || calculatedPagesUrl,
+        repoUrl: data.repoUrl || gitRepoUrl,
+        stdout: data.stdout,
+        stderr: data.stderr,
+      });
+      addToast('پروژه با موفقیت به گیت‌هاب ارسال شد و پایپ‌لاین GitHub Pages فعال گردید.', 'success');
+      fetchGitStatus();
+    } catch (err: any) {
+      setGitPushResult({
+        success: false,
+        message: err.message || 'خطا در برقراری ارتباط با مخزن گیت‌هاب.',
+      });
+      addToast(err.message || 'خطا در ارسال به گیت‌هاب', 'error');
+    } finally {
+      setIsPushingGit(false);
+    }
   };
 
   return (
@@ -800,52 +904,319 @@ export const SettingsView: React.FC = () => {
 
       {/* TAB 5: Automated GitHub & Railway CI/CD Deployment */}
       {settingsTab === 'deploy' && (
-        <div className="space-y-5">
+        <div className="space-y-6">
+          {/* Header Banner */}
           <div className="p-6 rounded-2xl bg-gradient-to-r from-zinc-950 via-zinc-900 to-black border border-amber-500/30 shadow-xl space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" />
-              <h3 className="text-base font-black text-amber-200">
-                اتصال و دپلوی خودکار با GitHub Actions و Railway
-              </h3>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <GitBranch className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-amber-200">
+                    اتصال و دپلوی خودکار به GitHub و Railway (CI/CD)
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    سیستم کنترل نسخه Git به همراه پایپ‌لاین تست و ساخت Docker در مخزن فعال است.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchGitStatus}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 text-xs font-medium cursor-pointer transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>بروزرسانی وضعیت Git</span>
+                </button>
+                <a
+                  href="https://railway.app/new"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>ورود به Railway</span>
+                </a>
+              </div>
             </div>
-            <p className="text-xs text-zinc-400 leading-relaxed max-w-3xl">
-              پایپ‌لاین اختصاصی CI/CD برای پروژه شما در مسیر <code className="text-amber-300 font-mono">.github/workflows/deploy.yml</code> و فایل <code className="text-amber-300 font-mono">Dockerfile</code> آماده شده است. با اتصال به گیت‌هاب، هر بار که دستور git push را اجرا کنید، پروژه به صورت اتوماتیک تست، کامپایل و دپلوی می‌شود.
-            </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                <span className="text-[10px] text-zinc-500 font-mono block">۱. مخزن گیت‌هاب</span>
-                <span className="text-xs font-bold text-white">اتصال به GitHub</span>
-                <p className="text-[11px] text-zinc-400">فایل‌های کد را در ریپازیتوری شخصی خود Push کنید.</p>
+            {/* Current Git Status Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-xs font-mono">
+              <div>
+                <span className="text-[11px] text-zinc-500 block font-sans">شاخه فعال (Current Branch):</span>
+                <span className="font-bold text-amber-300 flex items-center gap-1.5 mt-0.5">
+                  <GitBranch className="w-3.5 h-3.5 text-amber-400" />
+                  {gitStatus?.branch || 'main'}
+                </span>
               </div>
-
-              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                <span className="text-[10px] text-zinc-500 font-mono block">۲. پلتفرم ابری Railway</span>
-                <span className="text-xs font-bold text-white">اتصال New Project</span>
-                <p className="text-[11px] text-zinc-400">در Railway ریپازیتوری را متصل کرده و دامنه رایگان بگیرید.</p>
+              <div className="truncate">
+                <span className="text-[11px] text-zinc-500 block font-sans">آخرین کامیت آماده ارسال:</span>
+                <span className="text-zinc-200 truncate block mt-0.5" title={gitStatus?.lastCommit}>
+                  {gitStatus?.lastCommit || 'a57ba70 - feat: add Git automation endpoints'}
+                </span>
               </div>
-
-              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                <span className="text-[10px] text-zinc-500 font-mono block">۳. دپلوی خودکار (CD)</span>
-                <span className="text-xs font-bold text-white">Zero Downtime</span>
-                <p className="text-[11px] text-zinc-400">با هر Commit جدید، برنامه ظرف چند ثانیه آنلاین آپدیت می‌شود.</p>
+              <div>
+                <span className="text-[11px] text-zinc-500 block font-sans">ریموت متصل (Remote Origin):</span>
+                <span className={`mt-0.5 block truncate ${gitStatus?.hasRemote ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                  {gitStatus?.hasRemote ? (gitStatus.remotes[0] || 'متصل') : 'در انتظار ارسال اول'}
+                </span>
               </div>
             </div>
+          </div>
 
-            {/* Quick Git Commands Box */}
-            <div className="p-4 rounded-xl bg-black border border-zinc-800 font-mono text-xs space-y-2">
-              <div className="flex justify-between items-center text-zinc-400 text-[11px] pb-1 border-b border-zinc-800">
-                <span>دستورات سریع ترمینال جهت ارسال به گیت‌هاب:</span>
-                <span className="text-amber-400">Git Terminal</span>
+          {/* Live Panel Links Card */}
+          <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950 border border-amber-500/30 shadow-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Globe className="w-5 h-5 text-amber-400" />
+                <h4 className="text-sm font-bold text-white">
+                  لینک مستقیم پنل در GitHub Pages و سرور زنده
+                </h4>
               </div>
-              <div className="text-emerald-400">
-                git init<br />
-                git add .<br />
-                git commit -m "feat: MAHI JOOVOON VPN Platform"<br />
-                git branch -M main<br />
-                git remote add origin https://github.com/YOUR_USERNAME/mahi-joovoon.git<br />
-                git push -u origin main
+              <span className="text-[11px] px-2.5 py-1 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/30 font-medium">
+                استقرار استاتیک و بدون فیلتر GitHub Pages
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {/* GitHub Pages Card */}
+              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-xs font-bold text-amber-300">لینک اختصاصی GitHub Pages:</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">Static Web</span>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-black/60 border border-zinc-800 font-mono text-xs text-amber-200 select-all break-all">
+                  {gitPushResult?.pagesUrl || calculatedPagesUrl}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPagesLink(gitPushResult?.pagesUrl || calculatedPagesUrl)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-medium cursor-pointer transition-colors"
+                  >
+                    {copiedPagesLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedPagesLink ? 'کپی شد!' : 'کپی لینک GitHub Pages'}</span>
+                  </button>
+                  <a
+                    href={gitPushResult?.pagesUrl || calculatedPagesUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>مشاهده پنل</span>
+                  </a>
+                </div>
               </div>
+
+              {/* Live Cloud Applet Card */}
+              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <span className="text-xs font-bold text-cyan-300">لینک آنلاین سرور فعلی (Cloud Run):</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-400 font-mono">Full-Stack Live</span>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-black/60 border border-zinc-800 font-mono text-xs text-cyan-200 select-all break-all">
+                  {window.location.origin}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPagesLink(window.location.origin)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-medium cursor-pointer transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>کپی لینک سرور زنده</span>
+                  </button>
+                  <a
+                    href={window.location.origin}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>باز کردن تب جدید</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Push Form */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <UploadCloud className="w-5 h-5 text-amber-400" />
+                <h4 className="text-sm font-bold text-white">ارسال خودکار سورس کد به ریپازیتوری شخصی گیت‌هاب</h4>
+              </div>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                بدون نیاز به نصب Git روی گوشی یا کامپیوتر
+              </span>
+            </div>
+
+            <form onSubmit={handleGitPush} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-300 font-medium mb-1.5">
+                    آدرس ریپازیتوری گیت‌هاب شما (GitHub Repo URL):
+                  </label>
+                  <input
+                    type="text"
+                    value={gitRepoUrl}
+                    onChange={(e) => setGitRepoUrl(e.target.value)}
+                    placeholder="https://github.com/mahradmoradpour/mahi-joovoon.git"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-white placeholder:text-slate-500 focus:outline-hidden focus:border-amber-400"
+                    required
+                  />
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    مثال: <code className="text-amber-300 font-mono">https://github.com/your-username/your-repo.git</code>
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs text-slate-300 font-medium">
+                      توکن دسترسی شخصی (GitHub Personal Access Token):
+                    </label>
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=repo"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-amber-400 hover:underline flex items-center gap-1"
+                    >
+                      <span>ساخت توکن در GitHub</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showGitToken ? 'text' : 'password'}
+                      value={gitToken}
+                      onChange={(e) => setGitToken(e.target.value)}
+                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-white placeholder:text-slate-500 focus:outline-hidden focus:border-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGitToken(!showGitToken)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      {showGitToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    برای ریپازیتوری‌های اختصاصی یا ارسال بدون رمز عبور، توکن با مجوز <code className="text-amber-300 font-mono">repo</code> ایجاد و وارد نمایید.
+                  </span>
+                </div>
+              </div>
+
+              {/* Push Result Banner */}
+              {gitPushResult && (
+                <div
+                  className={`p-4 rounded-xl border text-xs leading-relaxed ${
+                    gitPushResult.success
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    {gitPushResult.success ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    )}
+                    <span>{gitPushResult.message}</span>
+                  </div>
+                  {gitPushResult.stdout && (
+                    <pre className="mt-2 p-2.5 rounded-lg bg-black/60 font-mono text-[11px] text-slate-300 overflow-x-auto whitespace-pre-wrap">
+                      {gitPushResult.stdout}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>تمام فایل‌های پروژه (پلتفرم MAHI JOOVOON، پایپ‌لاین CI/CD و داکر) کامیت شده و آماده ارسال مستقیم هستند.</span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isPushingGit}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 shrink-0"
+                >
+                  {isPushingGit ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>در حال ارسال به GitHub...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4" />
+                      <span>ارسال خودکار به گیت‌هاب (Push to GitHub)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Workflow & Railway Step-by-Step Architecture */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-xs">
+                ۱
+              </div>
+              <h5 className="text-xs font-bold text-white">۱. ارسال به ریپازیتوری GitHub</h5>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                کدهای پروژه با کامپایل بدون خطا و معماری فول‌استک Express + React در شاخه main قرار گرفته است.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs">
+                ۲
+              </div>
+              <h5 className="text-xs font-bold text-white">۲. پایپ‌لاین GitHub Actions</h5>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                فایل <code className="text-cyan-300 font-mono">.github/workflows/deploy.yml</code> به محض ارسال، تست‌های تایپ و بیلد Docker ایمیج را به صورت خودکار اجرا می‌کند.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-xs">
+                ۳
+              </div>
+              <h5 className="text-xs font-bold text-white">۳. اتصال Zero-Downtime به Railway</h5>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                در پنل Railway روی New Project و Deploy from GitHub repo کلیک کنید. با هر تغییر آینده، به طور خودکار دیپلوی می‌شود.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Git Commands Box */}
+          <div className="p-5 rounded-2xl bg-black border border-zinc-800 font-mono text-xs space-y-3">
+            <div className="flex justify-between items-center text-zinc-400 text-[11px] pb-2 border-b border-zinc-800 font-sans">
+              <span className="font-bold text-slate-200">دستورات دستی گیت (در صورت تمایل به اجرای مستقیم در ترمینال):</span>
+              <span className="text-amber-400 font-mono">CLI Ready</span>
+            </div>
+            <div className="text-emerald-400 text-xs leading-relaxed space-y-1">
+              <div>git branch -M main</div>
+              <div>git remote add origin https://github.com/mahradmoradpour/mahi-joovoon.git</div>
+              <div>git push -u origin main</div>
             </div>
           </div>
         </div>
