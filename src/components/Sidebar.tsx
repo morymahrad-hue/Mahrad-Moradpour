@@ -322,18 +322,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
           </div>
         </div>
 
-        {/* Footer Brand Seal */}
-        <div className="p-3 border-t border-amber-500/20 bg-gradient-to-t from-black via-zinc-950 to-zinc-950">
+        {/* Footer Brand Seal & Persistence Badge */}
+        <div className="p-3 border-t border-amber-500/20 bg-gradient-to-t from-black via-zinc-950 to-zinc-950 space-y-2">
+          <div className="flex items-center justify-between px-1 text-[10px] text-zinc-400 font-medium">
+            <span className="flex items-center gap-1.5 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>ذخیره خودکار: فعال</span>
+            </span>
+            <span className="text-zinc-500 font-mono">Auto-Saved</span>
+          </div>
+
           <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-amber-500/20 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
               <div>
                 <span className="font-bold text-amber-200 block text-[11px]">MAHI JOOVOON VIP</span>
-                <span className="text-[9px] text-zinc-400">Marzban & Xray Core v2.4</span>
+                <span className="text-[9px] text-zinc-400">Xray & GitHub Cloud v4.2</span>
               </div>
             </div>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
-              PRO
+              100% SAVE
             </span>
           </div>
         </div>

@@ -45,6 +45,7 @@ import {
   initialVPNSupportTickets,
   initialAdminStats,
 } from '../data/vpnData';
+import { parseNodesTxt } from '../utils/vpnConfigEngine';
 
 interface Toast {
   id: string;
@@ -193,49 +194,178 @@ interface ServerContextType {
   toasts: Toast[];
   addToast: (message: string, type?: 'success' | 'info' | 'error' | 'warning') => void;
   dismissToast: (id: string) => void;
+  // Local Persistence & Backup
+  exportAllData: () => string;
+  importAllData: (jsonString: string) => boolean;
+  resetAllData: () => void;
+  // GitHub Pages Live Nodes Sync
+  isSyncingGitHubNodes: boolean;
+  syncNodesFromGitHubPages: (notify?: boolean) => Promise<{ success: boolean; count: number }>;
 }
 
 const ServerContext = createContext<ServerContextType | undefined>(undefined);
 
+// Local Storage Keys for 100% offline and GitHub Pages persistence
+const STORAGE_KEYS = {
+  SERVERS: 'mahi_vpn_servers_v4',
+  USERS: 'mahi_vpn_users_v4',
+  CONFIGS: 'mahi_vpn_configs_v4',
+  TRANSACTIONS: 'mahi_vpn_transactions_v4',
+  TICKETS: 'mahi_vpn_tickets_v4',
+  PROJECTS: 'mahi_projects_v4',
+  FILES: 'mahi_files_v4',
+  SSH: 'mahi_ssh_settings_v4',
+  SUBSCRIPTION: 'mahi_subscription_v4',
+  FIREWALL: 'mahi_firewall_rules_v4',
+  NOTIFICATIONS: 'mahi_notifications_v4',
+  BALE_BOT: 'mahi_bale_bot_v4',
+  VPS_STATUS: 'mahi_vps_status_v4',
+};
+
+function loadStorage<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed !== null && parsed !== undefined ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveStorage<T>(key: string, data: T) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    console.warn(`localStorage save error for ${key}:`, err);
+  }
+}
+
 export const ServerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [activeTab, setActiveTab] = useState<PageTab>('dashboard');
-  const [vpsStatus, setVpsStatus] = useState<RealVPSState>({
-    isConnected: true,
-    host: '185.190.142.88',
-    port: 22,
-    username: 'root',
-    osInfo: 'Ubuntu 22.04.5 LTS (x86_64)',
-    uptime: 'up 24 days, 7 hours, 45 minutes',
-    lastConnectedAt: new Date().toISOString(),
-    lastError: null,
-  });
+  const [vpsStatus, setVpsStatus] = useState<RealVPSState>(() =>
+    loadStorage(STORAGE_KEYS.VPS_STATUS, {
+      isConnected: true,
+      host: '185.190.142.88',
+      port: 22,
+      username: 'root',
+      osInfo: 'Ubuntu 22.04.5 LTS (x86_64)',
+      uptime: 'up 24 days, 7 hours, 45 minutes',
+      lastConnectedAt: new Date().toISOString(),
+      lastError: null,
+    })
+  );
   const [isConnectingVPS, setIsConnectingVPS] = useState<boolean>(false);
   const [isDeployingService, setIsDeployingService] = useState<boolean>(false);
 
   const [metrics, setMetrics] = useState<ServerMetrics>(emptyMetrics);
   const [isLiveMetricsActive, setIsLiveMetricsActive] = useState<boolean>(true);
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
-  const [baleBot, setBaleBot] = useState<BaleBotConfig>(initialBaleBot);
-  const [files, setFiles] = useState<FileItem[]>(initialFiles);
+  const [projects, setProjects] = useState<Project[]>(() => loadStorage(STORAGE_KEYS.PROJECTS, initialProjects));
+  const [baleBot, setBaleBot] = useState<BaleBotConfig>(() => loadStorage(STORAGE_KEYS.BALE_BOT, initialBaleBot));
+  const [files, setFiles] = useState<FileItem[]>(() => loadStorage(STORAGE_KEYS.FILES, initialFiles));
   const [currentDirectory, setCurrentDirectory] = useState<string>('/var/www');
   const [terminalLogs, setTerminalLogs] = useState<TerminalLog[]>(initialRealTerminalLogs);
   const [services, setServices] = useState<SystemService[]>(initialServices);
   const [processes, setProcesses] = useState<ProcessItem[]>(initialProcesses);
-  const [sshSettings, setSSHSettings] = useState<SSHSettings>(initialSSHSettings);
-  const [subscription, setSubscription] = useState<ServerSubscription>(initialSubscription);
-  const [firewallRules, setFirewallRules] = useState<FirewallRule[]>(initialFirewallRules);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
+  const [sshSettings, setSSHSettings] = useState<SSHSettings>(() => loadStorage(STORAGE_KEYS.SSH, initialSSHSettings));
+  const [subscription, setSubscription] = useState<ServerSubscription>(() =>
+    loadStorage(STORAGE_KEYS.SUBSCRIPTION, initialSubscription)
+  );
+  const [firewallRules, setFirewallRules] = useState<FirewallRule[]>(() =>
+    loadStorage(STORAGE_KEYS.FIREWALL, initialFirewallRules)
+  );
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
+    loadStorage(STORAGE_KEYS.NOTIFICATIONS, initialNotifications)
+  );
   const [isRebooting, setIsRebooting] = useState<boolean>(false);
   const [rebootProgress, setRebootProgress] = useState<number>(0);
   const [language, setLanguage] = useState<Language>('fa');
   const [vpnStats, setVpnStats] = useState<AdminStats>(initialAdminStats);
-  const [vpnServers, setVpnServers] = useState<VPNServerNode[]>(initialVPNServers);
-  const [vpnUsers, setVpnUsers] = useState<VPNUser[]>(initialVPNUsers);
-  const [vpnConfigs, setVpnConfigs] = useState<VPNConfig[]>(initialVPNConfigs);
+  const [vpnServers, setVpnServers] = useState<VPNServerNode[]>(() =>
+    loadStorage(STORAGE_KEYS.SERVERS, initialVPNServers)
+  );
+  const [vpnUsers, setVpnUsers] = useState<VPNUser[]>(() => loadStorage(STORAGE_KEYS.USERS, initialVPNUsers));
+  const [vpnConfigs, setVpnConfigs] = useState<VPNConfig[]>(() =>
+    loadStorage(STORAGE_KEYS.CONFIGS, initialVPNConfigs)
+  );
   const [vpnPlans] = useState<VPNSubscriptionPlan[]>(initialVPNPlans);
-  const [vpnTransactions, setVpnTransactions] = useState<VPNTransaction[]>(initialVPNTransactions);
-  const [vpnTickets, setVpnTickets] = useState<VPNSupportTicket[]>(initialVPNSupportTickets);
+  const [vpnTransactions, setVpnTransactions] = useState<VPNTransaction[]>(() =>
+    loadStorage(STORAGE_KEYS.TRANSACTIONS, initialVPNTransactions)
+  );
+  const [vpnTickets, setVpnTickets] = useState<VPNSupportTicket[]>(() =>
+    loadStorage(STORAGE_KEYS.TICKETS, initialVPNSupportTickets)
+  );
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isSyncingGitHubNodes, setIsSyncingGitHubNodes] = useState<boolean>(false);
+
+  // Sync and populate live nodes from GitHub Pages (or local static fallback)
+  const syncNodesFromGitHubPages = async (notify = true): Promise<{ success: boolean; count: number }> => {
+    setIsSyncingGitHubNodes(true);
+    const candidates = [
+      'https://morymahrad-hue.github.io/mahi-joovoon/nodes.txt',
+      './nodes.txt',
+      'https://raw.githubusercontent.com/morymahrad-hue/mahi-joovoon/main/public/nodes.txt',
+    ];
+
+    let rawText = '';
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, { cache: 'no-cache' });
+        if (res.ok) {
+          const text = await res.text();
+          if (text && (text.includes('vless://') || text.includes('trojan://') || text.includes('vmess://') || text.includes('ss://'))) {
+            rawText = text;
+            break;
+          }
+        }
+      } catch {
+        // try next fallback
+      }
+    }
+
+    if (!rawText) {
+      setIsSyncingGitHubNodes(false);
+      if (notify) addToast('خطا در دریافت لیست نودها از GitHub Pages. اتصال را بررسی نمایید.', 'error');
+      return { success: false, count: 0 };
+    }
+
+    const { configs, servers } = parseNodesTxt(rawText);
+    if (configs.length > 0) {
+      setVpnConfigs(configs);
+      if (servers.length > 0) {
+        setVpnServers(servers);
+      }
+      saveStorage(STORAGE_KEYS.CONFIGS, configs);
+      if (servers.length > 0) saveStorage(STORAGE_KEYS.SERVERS, servers);
+
+      if (notify) {
+        addToast(`همگام‌سازی موفق! ${configs.length} نود فعال با موفقیت از GitHub Pages دریافت و جایگذاری شدند.`, 'success');
+      }
+      setIsSyncingGitHubNodes(false);
+      return { success: true, count: configs.length };
+    } else {
+      setIsSyncingGitHubNodes(false);
+      if (notify) addToast('هیچ نود معتبری در فایل nodes.txt یافت نشد.', 'warning');
+      return { success: false, count: 0 };
+    }
+  };
+
+  // Auto-sync state mutations to localStorage immediately
+  useEffect(() => { saveStorage(STORAGE_KEYS.SERVERS, vpnServers); }, [vpnServers]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.USERS, vpnUsers); }, [vpnUsers]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.CONFIGS, vpnConfigs); }, [vpnConfigs]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.TRANSACTIONS, vpnTransactions); }, [vpnTransactions]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.TICKETS, vpnTickets); }, [vpnTickets]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.PROJECTS, projects); }, [projects]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.BALE_BOT, baleBot); }, [baleBot]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.FILES, files); }, [files]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.SSH, sshSettings); }, [sshSettings]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.SUBSCRIPTION, subscription); }, [subscription]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.FIREWALL, firewallRules); }, [firewallRules]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.NOTIFICATIONS, notifications); }, [notifications]);
+  useEffect(() => { saveStorage(STORAGE_KEYS.VPS_STATUS, vpsStatus); }, [vpsStatus]);
 
   const addToast = (message: string, type: 'success' | 'info' | 'error' | 'warning' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -247,6 +377,62 @@ export const ServerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Export / Import / Reset panel database
+  const exportAllData = (): string => {
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      appName: 'MAHI-JOOVOON-VPN',
+      version: '4.0',
+      vpnServers,
+      vpnUsers,
+      vpnConfigs,
+      vpnTransactions,
+      vpnTickets,
+      projects,
+      files,
+      sshSettings,
+      subscription,
+      firewallRules,
+    };
+    return JSON.stringify(backup, null, 2);
+  };
+
+  const importAllData = (jsonString: string): boolean => {
+    try {
+      const data = JSON.parse(jsonString);
+      if (Array.isArray(data.vpnServers)) setVpnServers(data.vpnServers);
+      if (Array.isArray(data.vpnUsers)) setVpnUsers(data.vpnUsers);
+      if (Array.isArray(data.vpnConfigs)) setVpnConfigs(data.vpnConfigs);
+      if (Array.isArray(data.vpnTransactions)) setVpnTransactions(data.vpnTransactions);
+      if (Array.isArray(data.vpnTickets)) setVpnTickets(data.vpnTickets);
+      if (Array.isArray(data.projects)) setProjects(data.projects);
+      if (Array.isArray(data.files)) setFiles(data.files);
+      if (data.sshSettings) setSSHSettings(data.sshSettings);
+      if (data.subscription) setSubscription(data.subscription);
+      if (Array.isArray(data.firewallRules)) setFirewallRules(data.firewallRules);
+      addToast('اطلاعات پنل با موفقیت بازیابی شد', 'success');
+      return true;
+    } catch {
+      addToast('فایل پشتیبان نامعتبر است', 'error');
+      return false;
+    }
+  };
+
+  const resetAllData = () => {
+    Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+    setVpnServers(initialVPNServers);
+    setVpnUsers(initialVPNUsers);
+    setVpnConfigs(initialVPNConfigs);
+    setVpnTransactions(initialVPNTransactions);
+    setVpnTickets(initialVPNSupportTickets);
+    setProjects(initialProjects);
+    setFiles(initialFiles);
+    setSSHSettings(initialSSHSettings);
+    setSubscription(initialSubscription);
+    setFirewallRules(initialFirewallRules);
+    addToast('داده‌های پنل به تنظیمات اولیه کارخانه بازگردانی شدند', 'info');
   };
 
   // 1. Initial check of VPS status and load VPN entities from backend
@@ -272,7 +458,7 @@ export const ServerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
       } catch (err) {
-        console.error('Failed to query VPS status:', err);
+        // Backend not available (GitHub Pages static host) - keep stored state
       }
     };
 
@@ -288,18 +474,42 @@ export const ServerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         ]);
 
         if (statsRes.ok) setVpnStats(await statsRes.json());
-        if (serversRes.ok) setVpnServers(await serversRes.json());
-        if (usersRes.ok) setVpnUsers(await usersRes.json());
-        if (configsRes.ok) setVpnConfigs(await configsRes.json());
-        if (txRes.ok) setVpnTransactions(await txRes.json());
-        if (ticketsRes.ok) setVpnTickets(await ticketsRes.json());
-      } catch (err) {
-        console.warn('Backend VPN endpoints warming up, using initial state:', err);
+
+        // Only adopt backend data if user doesn't already have saved changes in localStorage
+        const hasCustomServers = !!localStorage.getItem(STORAGE_KEYS.SERVERS);
+        const hasCustomUsers = !!localStorage.getItem(STORAGE_KEYS.USERS);
+        const hasCustomConfigs = !!localStorage.getItem(STORAGE_KEYS.CONFIGS);
+        const hasCustomTx = !!localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+        const hasCustomTickets = !!localStorage.getItem(STORAGE_KEYS.TICKETS);
+
+        if (serversRes.ok && !hasCustomServers) {
+          const s = await serversRes.json();
+          if (Array.isArray(s) && s.length > 0) setVpnServers(s);
+        }
+        if (usersRes.ok && !hasCustomUsers) {
+          const u = await usersRes.json();
+          if (Array.isArray(u) && u.length > 0) setVpnUsers(u);
+        }
+        if (configsRes.ok && !hasCustomConfigs) {
+          const c = await configsRes.json();
+          if (Array.isArray(c) && c.length > 0) setVpnConfigs(c);
+        }
+        if (txRes.ok && !hasCustomTx) {
+          const t = await txRes.json();
+          if (Array.isArray(t) && t.length > 0) setVpnTransactions(t);
+        }
+        if (ticketsRes.ok && !hasCustomTickets) {
+          const tk = await ticketsRes.json();
+          if (Array.isArray(tk) && tk.length > 0) setVpnTickets(tk);
+        }
+      } catch {
+        // Static mode on GitHub Pages: Keep local storage safely!
       }
     };
 
     checkStatus();
     loadVPNData();
+    syncNodesFromGitHubPages(false);
   }, []);
 
   // VPN CRUD Handlers
@@ -1486,6 +1696,11 @@ export const ServerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         toasts,
         addToast,
         dismissToast,
+        exportAllData,
+        importAllData,
+        resetAllData,
+        isSyncingGitHubNodes,
+        syncNodesFromGitHubPages,
       }}
     >
       {children}
